@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment
+.env
+
+# SysEx dumps
+*.syx
+
+# Scala / KBM files
+*.scl
+*.kbm
+
+# uv
+uv.lock
+
+# OS
+.DS_Store
