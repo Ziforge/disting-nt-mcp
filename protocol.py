@@ -163,6 +163,7 @@ CMD_SET_FOCUS = 0x4A
 CMD_REQUEST_MAPPINGS = 0x4B
 CMD_SET_CV_MAPPING = 0x4D
 CMD_SET_MIDI_MAPPING = 0x4E
+CMD_SET_I2C_MAPPING = 0x4F
 CMD_REQUEST_PARAMETER_VALUE_STRING = 0x50
 CMD_SET_SLOT_NAME = 0x51
 CMD_SET_PARAMETER_STRING = 0x53
@@ -472,6 +473,40 @@ def msg_set_midi_mapping(
     data.extend(encode16(midi_min))
     data.extend(encode16(midi_max))
     return sysex_msg(sysex_id, CMD_SET_MIDI_MAPPING, data)
+
+
+def msg_set_i2c_mapping(
+    sysex_id: int,
+    algo_index: int,
+    param_num: int,
+    version: int,
+    i2c_cc: int,
+    enabled: bool = True,
+    symmetric: bool = False,
+    i2c_min: int = 0,
+    i2c_max: int = 16383,
+) -> list[int]:
+    """Set I2C mapping for a parameter (CMD 0x4F).
+
+    Args:
+        algo_index: Algorithm slot index.
+        param_num: Parameter number.
+        version: Mapping format version (1-5).
+        i2c_cc: I2C CC number (0-255, low 7 bits in first byte, bit 7 in cc_high).
+        enabled: Enable this mapping.
+        symmetric: Symmetric mode.
+        i2c_min: Minimum value (signed 16-bit).
+        i2c_max: Maximum value (signed 16-bit).
+    """
+    data = [algo_index & 0x7F] + encode16(param_num) + [version & 0x7F]
+    data.append(i2c_cc & 0x7F)
+    if version >= 3:
+        data.append((i2c_cc >> 7) & 0x01)
+    flags = (1 if enabled else 0) | (2 if symmetric else 0)
+    data.append(flags & 0x7F)
+    data.extend(encode16(i2c_min))
+    data.extend(encode16(i2c_max))
+    return sysex_msg(sysex_id, CMD_SET_I2C_MAPPING, data)
 
 
 def msg_request_parameter_value_string(

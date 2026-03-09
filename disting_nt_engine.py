@@ -62,6 +62,7 @@ from protocol import (
     msg_set_cv_mapping,
     msg_set_display_mode,
     msg_set_focus,
+    msg_set_i2c_mapping,
     msg_set_midi_mapping,
     msg_set_parameter_value,
     msg_set_preset_name,
@@ -750,6 +751,32 @@ class DistingNTEngine:
                 mapping_type,
                 midi_min,
                 midi_max,
+            )
+        )
+
+    def set_i2c_mapping(
+        self,
+        algo_index: int,
+        param_num: int,
+        version: int,
+        i2c_cc: int,
+        enabled: bool = True,
+        symmetric: bool = False,
+        i2c_min: int = 0,
+        i2c_max: int = 16383,
+    ) -> None:
+        """Set I2C mapping for a parameter."""
+        self._send(
+            msg_set_i2c_mapping(
+                self._sysex_id,
+                algo_index,
+                param_num,
+                version,
+                i2c_cc,
+                enabled,
+                symmetric,
+                i2c_min,
+                i2c_max,
             )
         )
 

@@ -774,6 +774,160 @@ async def set_midi_mapping(
     )
 
 
+@mcp.tool()
+async def set_i2c_mapping(
+    ctx: Context,
+    algo_index: int,
+    param_num: int,
+    i2c_cc: int,
+    enabled: bool = True,
+    symmetric: bool = False,
+    i2c_min: int = 0,
+    i2c_max: int = 16383,
+    version: int = 5,
+) -> str:
+    """Assign an I2C CC to a parameter (CMD 0x4F).
+
+    Args:
+        algo_index: Algorithm slot index (0-based).
+        param_num: Parameter number (0-based).
+        i2c_cc: I2C CC number (0-255).
+        enabled: Enable this mapping.
+        symmetric: Symmetric mode.
+        i2c_min: Minimum value (signed 16-bit).
+        i2c_max: Maximum value (signed 16-bit).
+        version: Mapping format version (default 5).
+    """
+    engine = _require_connection(ctx)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: engine.set_i2c_mapping(
+            algo_index, param_num, version, i2c_cc,
+            enabled, symmetric, i2c_min, i2c_max,
+        ),
+    )
+    return (
+        f"I2C mapping set: algo {algo_index} param {param_num} "
+        f"← I2C CC {i2c_cc}"
+    )
+
+
+@mcp.tool()
+async def auto_map_midi_cc(
+    ctx: Context,
+    algo_index: int,
+    param_num: int,
+    midi_cc: int,
+    midi_channel: int = 0,
+) -> str:
+    """Auto-map a MIDI CC to a Disting NT parameter using its full range.
+
+    Queries parameter info to get min/max, then sets the MIDI mapping with
+    full range. Returns mapping details useful for configuring the sender
+    (e.g. FH-2 CV output).
+
+    Args:
+        algo_index: Algorithm slot index (0-based).
+        param_num: Parameter number (0-based).
+        midi_cc: MIDI CC number to assign (0-127).
+        midi_channel: MIDI channel (0=omni, 1-15 for specific channel).
+    """
+    engine = _require_connection(ctx)
+    loop = asyncio.get_event_loop()
+
+    info = await loop.run_in_executor(
+        None, lambda: engine.get_parameter_info(algo_index, param_num)
+    )
+    if "error" in info:
+        return f"Error getting parameter info: {info['error']}"
+
+    param_name = info.get("name", "?")
+    param_min = info.get("min", 0)
+    param_max = info.get("max", 127)
+
+    await loop.run_in_executor(
+        None,
+        lambda: engine.set_midi_mapping(
+            algo_index, param_num, 5, midi_cc, midi_channel,
+            enabled=True, midi_min=param_min, midi_max=param_max,
+        ),
+    )
+
+    return (
+        f"Auto-mapped: algo {algo_index} '{param_name}' (param {param_num}) "
+        f"← MIDI CC {midi_cc} (ch {'omni' if midi_channel == 0 else midi_channel})\n"
+        f"  Parameter range: {param_min} to {param_max}\n"
+        f"  MIDI range: {param_min} to {param_max}\n"
+        f"  To control from FH-2: send CC {midi_cc} on ch "
+        f"{'any' if midi_channel == 0 else midi_channel}"
+    )
+
+
+@mcp.tool()
+async def list_active_mappings(
+    ctx: Context,
+    algo_index: int,
+) -> str:
+    """Scan all parameters in an algorithm slot and list active CV/MIDI/I2C mappings.
+
+    Args:
+        algo_index: Algorithm slot index (0-based).
+    """
+    engine = _require_connection(ctx)
+    loop = asyncio.get_event_loop()
+
+    num_result = await loop.run_in_executor(
+        None, lambda: engine.get_num_parameters(algo_index)
+    )
+    num_params = num_result.get("count", 0)
+    if num_params <= 0:
+        return f"No parameters found for algorithm slot {algo_index}"
+
+    active: list[str] = []
+    for p in range(num_params):
+        mapping = await loop.run_in_executor(
+            None, lambda pn=p: engine.get_mappings(algo_index, pn)
+        )
+        if "error" in mapping:
+            continue
+
+        info = await loop.run_in_executor(
+            None, lambda pn=p: engine.get_parameter_info(algo_index, pn)
+        )
+        param_name = info.get("name", f"param {p}") if "error" not in info else f"param {p}"
+
+        cv = mapping.get("cv", {})
+        midi = mapping.get("midi", {})
+        i2c = mapping.get("i2c", {})
+
+        parts: list[str] = []
+        if cv.get("cv_input", 0) != 0 or cv.get("delta", 0) != 0:
+            parts.append(
+                f"CV(input={cv.get('cv_input')}, volts={cv.get('volts')}, "
+                f"delta={cv.get('delta')})"
+            )
+        if midi.get("enabled"):
+            parts.append(
+                f"MIDI(cc={midi.get('cc')}, ch={midi.get('channel')}, "
+                f"range=[{midi.get('min')},{midi.get('max')}])"
+            )
+        if i2c.get("enabled"):
+            parts.append(
+                f"I2C(cc={i2c.get('cc')}, range=[{i2c.get('min')},{i2c.get('max')}])"
+            )
+
+        if parts:
+            active.append(f"  [{p:3d}] {param_name}: {' | '.join(parts)}")
+
+    if not active:
+        return f"No active mappings found in algorithm slot {algo_index} ({num_params} params scanned)"
+
+    lines = [f"=== Active Mappings for Slot {algo_index} ({len(active)}/{num_params} params mapped) ==="]
+    lines.extend(active)
+    return "\n".join(lines)
+
+
 # ===================================================================
 # 7. SYSTEM TOOLS (6)
 # ===================================================================
